@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:p="http://www.springframework.org/schema/p"
+	xmlns:context="http://www.springframework.org/schema/context" xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:aop="http://www.springframework.org/schema/aop" xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.2.xsd
+	http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.2.xsd
+	http://www.springframework.org/schema/tx  http://www.springframework.org/schema/tx/spring-tx-4.1.xsd
+	http://www.springframework.org/schema/aop  http://www.springframework.org/schema/aop/spring-aop-4.2.xsd
+	http://www.springframework.org/schema/mvc  http://www.springframework.org/schema/mvc/spring-mvc-4.2.xsd
+	">
+	<!-- property调用set方法赋值, 没有set方法时应使用 constructor-arg 调用构造方法赋值-->
+	<!-- spring是bean的容器(service + repository) -->
+	<context:component-scan base-package="cn">
+		<!-- 排除controller注解 -->
+		<context:exclude-filter type="annotation" expression="org.springframework.stereotype.Controller"/>
+	</context:component-scan>
+	<!-- 使用context命名空间定义配置文件(properties)的位置 -->
+	<context:property-placeholder location="classpath:/jdbc.properties" />
+	<!-- 所有数据源 都实现自接口DataSource 常用连接池c3p0 dbcp druid(阿里巴巴  带有监控功能)  -->
+	<bean id="dataSource" class="com.alibaba.druid.pool.DruidDataSource">
+		<property name="url" value="${url}"></property>
+		<property name="driverClassName" value="${driverClassName}"></property>
+		<property name="username" value="${username1}"></property>
+		<property name="password" value="${password}"></property>
+		<!-- 初始生成的连接个数 -->
+		<property name="initialSize" value="1"></property>
+		<!-- 最大生成的连接个数 -->
+		<property name="maxActive" value="200"></property>
+		<!-- 最大的等待人数 -->
+		<property name="maxIdle" value="100"></property>
+		<!-- 开启sql语句统计功能    druid连接池的监控功能需要统计 -->
+		<property name="filters" value="stat"></property>
+	</bean>
+	<!-- 集成mybatis -->
+	<!-- 配置session工厂 -->
+	<bean id="sessionFactory" class="org.mybatis.spring.SqlSessionFactoryBean">
+		<property name="dataSource" ref="dataSource"></property> <!-- 与连接池关联, 获取session工厂 -->
+	</bean>
+	<bean id="sessionTemplate" class="org.mybatis.spring.SqlSessionTemplate">
+		<!-- 通过构造器赋值参数下标为0   与session工厂关联, 获取session -->
+		<constructor-arg index="0" ref="sessionFactory"></constructor-arg>
+	</bean>
+	<!-- 扫描mybatis的映射接口的注解 -->
+	<bean id="scannerConfigurer" class="org.mybatis.spring.mapper.MapperScannerConfigurer">
+		<property name="basePackage" value="cn.*..*.mapper"></property><!-- 扫描的包 -->
+	</bean>
+	<!-- 事务管理器   不再使用jdbc的commit和rollback  必须使用事务管理器提供 -->
+  <bean id="transactionManager" class="org.springframework.jdbc.datasource.DataSourceTransactionManager">
+    <property name="dataSource" ref="dataSource"></property>
+  </bean>
+  <!-- 定义事务通知    通知的代码（前置通知）spring已经实现 　与事务管理器关联  -->
+  <tx:advice id = "myAdvice" transaction-manager="transactionManager">
+    <tx:attributes>
+      <!-- propagation="" 事务的传播  方法与方法之间必须存在父子关系
+           REQUIRED  没有事务就创建一个事务，有事务就使用当前事务
+           REQUIRES_NEW  不管父方法存不存在事务，都会新建一个事务
+           SUPPORTS  父方法存在事务就使用当前事务，没有事务就使用jdbc的事务（自动提交）
+           NOT_SUPPORTED  不管父方法存不存在事务，都不会使用事务（挂起事务，不受父方法事务影响）
+           MANDATORY  必须在事务的环境下运行，如果父方法没有事务就抛出异常
+             no existing transaction found for transaction marked with propagation 'mandatory'
+           NEVER  父方法不能存在事务，如果父方法有事务就抛出异常 
+             no existing transaction found for transaction marked with propagation 'mandatory'
+             
+           isolation="" 设置spring的事务隔离级别
+           DEFAULT  使用数据库的默认隔离级别   oracle（读已提交）  mysql（可重复读）
+           READ_COMMITTED  读已提交  （脏读）
+           REPEATABLE_READ  可重复读  （不可重复读， 脏读）
+           SERIALIZABLE  串行化  （幻读，不可重复读， 脏读）
+           
+                                 设置spring事务的回滚 与不回滚  （运行时异常默认自动回滚，检查异常默认不回滚）
+           rollback-for="" 设置检查异常为自动回滚
+           no-rollback-for=""  设置某个自动回滚的异常为不回滚
+           
+           timeout="" 设置客户端请求超时取消语句时间（单位为秒）
+           mysql默认10s自动超时    oracle默认永不超时（-1） -->
+      <!-- 设置拦截的方法 -->
+      <tx:method name="update*" propagation="REQUIRED"/>
+      <tx:method name="save*" propagation="REQUIRED"/>
+      <tx:method name="delete*" propagation="REQUIRED"/>
+      <tx:method name="*" read-only="true"/> <!-- 表示只读   不拦截  -->
+    </tx:attributes>
+  </tx:advice>
+  <!-- aop配置 -->
+	  <!-- 定义切点 
+	      expression(权限 返回类型  (*表示所有)  要拦截的方法(包名.类名.方法名)(参数..表示任何参数))
+	  -->
+	<aop:config>
+	  <aop:pointcut expression="execution(* cn.et.article.*.ArticleService.*(..))" id="myPointCut"/>
+	  <!-- 导入通知 -->
+	  <aop:advisor advice-ref="myAdvice" pointcut-ref="myPointCut"/>
+	  <!-- 定义通知     常用的通知  前置通知(before) ，后置通知..，异常通知..，环绕通知..
+	  <aop:aspect>
+	    <aop:before method=""/>
+	  </aop:aspect> -->
+	</aop:config>
+</beans>
